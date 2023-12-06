@@ -1,50 +1,64 @@
-// SPDX-License-Identifier: MIT
+/ SPDX-License-Identifier: MIT
 pragma solidity ^0.8.0;
 
-/// @title Contrato de Billetera de Donaciones
-/// @notice Este contrato permite a los usuarios realizar donaciones y consultar el saldo.
-contract DonationWallet {
-    address public owner; // Dirección del propietario del contrato
-    uint256 public balance; // Saldo actual de la billetera
+contract TransparentePeruano {
+    address public owner;
+    
+    // Estructura para representar un proyecto
+    struct Project {
+        string name;
+        uint256 targetAmount;
+        uint256 currentAmount;
+        mapping(address => uint256) donations;
+    }
 
-    /// @dev Evento emitido cuando se recibe una donación.
-    /// @param donor Dirección del remitente de la donación.
-    /// @param amount Monto de la donación en wei.
-    event DonationReceived(address indexed donor, uint256 amount);
+    mapping(bytes32 => Project) public projects; // Mapping para almacenar proyectos por ID
 
-    /// @dev Constructor que establece al propietario del contrato.
+    // Evento para registrar donaciones
+    event DonationReceived(bytes32 projectId, address indexed donor, uint256 amount);
+
+    // Modificador para garantizar que solo el propietario pueda realizar ciertas operaciones
+    modifier onlyOwner() {
+        require(msg.sender == owner, unicode"Solo el propietario puede realizar esta operación");
+        _;
+    }
+
+    // Constructor que establece al creador del contrato como propietario
     constructor() {
         owner = msg.sender;
     }
 
-    /// @dev Función para que los usuarios realicen donaciones.
-    /// @notice Esta función es payable, lo que permite enviar ether junto con la llamada.
-    /// @notice Los fondos donados se agregan al saldo del contrato.
-    function donate() public payable {
-        require(msg.value > 0, "La donación debe ser mayor que cero");
-        balance += msg.value;
-        emit DonationReceived(msg.sender, msg.value);
+    // Función para crear un nuevo proyecto
+    function createProject(bytes32 projectId, string memory projectName, uint256 targetAmount) external onlyOwner {
+        Project storage newProject = projects[projectId];
+        newProject.name = projectName;
+        newProject.targetAmount = targetAmount;
+        newProject.currentAmount = 0;
     }
 
-    /// @dev Función view para consultar el saldo actual de la billetera.
-    /// @return El saldo actual en wei.
-    function getBalance() public view returns (uint256) {
-        return balance;
+    // Función para realizar donaciones a un proyecto específico
+    function donate(bytes32 projectId) external payable {
+        Project storage project = projects[projectId];
+        require(msg.value > 0, unicode"La donación debe ser mayor que cero");
+        require(project.currentAmount + msg.value <= project.targetAmount, unicode"Se excede el objetivo de donación");
+
+        project.donations[msg.sender] += msg.value;
+        project.currentAmount += msg.value;
+
+        emit DonationReceived(projectId, msg.sender, msg.value);
     }
 
-    /// @dev Función para que el propietario retire fondos de la billetera.
-    /// @param amount Monto a retirar en wei.
-    function withdraw(uint256 amount) public {
-        require(msg.sender == owner, "Solo el propietario puede retirar fondos");
-        require(amount <= balance, "Saldo insuficiente");
+    // Función para consultar el saldo actual de un proyecto
+    function getProjectBalance(bytes32 projectId) external view returns (uint256) {
+        return projects[projectId].currentAmount;
+    }
+
+    // Función para retirar fondos de un proyecto (solo permitido al propietario)
+    function withdrawFunds(bytes32 projectId, uint256 amount) external onlyOwner {
+        Project storage project = projects[projectId];
+        require(amount <= project.currentAmount, "Saldo insuficiente en el proyecto");
         payable(owner).transfer(amount);
-        balance -= amount;
+        project.currentAmount -= amount;
     }
-
-    /// @dev Función fallback que permite recibir ether sin datos adicionales.
-    receive() external payable {
-        // Esta función se ejecuta cuando alguien envía ether directamente al contrato.
-        // Los fondos se consideran una donación y se agregan al saldo.
-        donate();
-    }
+    
 }
